@@ -86,4 +86,53 @@ function validateUploadMeta({ mode, stepCount, shading, fileSize, maxSize }) {
   return { ok: errors.length === 0, errors };
 }
 
-module.exports = { validatePlan, validateTutorial, validateUploadMeta, ALLOWED_MODES, ALLOWED_STEP_COUNTS };
+/** Validate the direct AI guide response from generate-direct endpoint. */
+function validateGuideResponse(guide, { mode, stepCount, shading }) {
+  const errors = [];
+  if (!guide || typeof guide !== "object") {
+    return { ok: false, errors: ["response is not an object"] };
+  }
+  if (typeof guide.title !== "string" || !guide.title.trim()) {
+    errors.push("missing title");
+  }
+  const allowedSubjectTypes = ["portrait", "animal", "vehicle", "object", "landscape", "general"];
+  if (!allowedSubjectTypes.includes(guide.subjectType)) {
+    errors.push(`invalid subjectType: ${guide.subjectType}`);
+  }
+  if (!ALLOWED_MODES.includes(guide.mode)) {
+    errors.push(`mode mismatch: expected ${mode}, got ${guide.mode}`);
+  }
+  if (typeof guide.shading !== "boolean") {
+    errors.push(`shading mismatch: expected ${shading}, got ${guide.shading}`);
+  }
+  if (!Array.isArray(guide.steps)) {
+    errors.push("steps is not an array");
+    return { ok: false, errors };
+  }
+  if (guide.steps.length !== stepCount) {
+    errors.push(`expected ${stepCount} steps, got ${guide.steps.length}`);
+  }
+  const seenSteps = new Set();
+  for (let i = 0; i < guide.steps.length; i++) {
+    const s = guide.steps[i];
+    if (!s || typeof s !== "object") {
+      errors.push(`step ${i + 1} is not an object`);
+      continue;
+    }
+    const n = Number(s.stepNumber) || i + 1;
+    if (n < 1 || n > stepCount) {
+      errors.push(`step ${n}: stepNumber out of range (1-${stepCount})`);
+    }
+    if (seenSteps.has(n)) {
+      errors.push(`step ${n}: duplicate stepNumber`);
+    }
+    seenSteps.add(n);
+    if (typeof s.title !== "string" || !s.title.trim()) errors.push(`step ${n}: missing title`);
+    if (typeof s.instruction !== "string" || !s.instruction.trim()) errors.push(`step ${n}: missing instruction`);
+    if (typeof s.artistTip !== "string") errors.push(`step ${n}: artistTip must be a string`);
+    if (typeof s.visualDescription !== "string") errors.push(`step ${n}: visualDescription must be a string`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+module.exports = { validatePlan, validateTutorial, validateUploadMeta, validateGuideResponse, ALLOWED_MODES, ALLOWED_STEP_COUNTS };

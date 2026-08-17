@@ -19,7 +19,13 @@ function notFound(req, res) {
 
 function errorHandler(err, req, res, _next) {
   const code = err.code || "SERVER_ERROR";
-  const status = err.status || (code === "VALIDATION_FAILED" || code === "INVALID_IMAGE" || code === "UNSUPPORTED_IMAGE" ? 400 : 500);
+  const status =
+    err.status ||
+    (code === "SERVER_BUSY"
+      ? 503
+      : code === "VALIDATION_FAILED" || code === "INVALID_IMAGE" || code === "UNSUPPORTED_IMAGE"
+        ? 400
+        : 500);
   if (status >= 500) {
     // eslint-disable-next-line no-console
     console.error("[server]", err);

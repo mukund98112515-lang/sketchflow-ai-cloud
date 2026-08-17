@@ -8,9 +8,9 @@ const cors = require("cors");
 const config = require("./config");
 const { notFound, errorHandler, deviceKey } = require("./middlewares/errors");
 
-const tutorialsRouter = require("./routes/tutorials");
+const generateRouter = require("./routes/generate");
+const generateDirectRouter = require("./routes/generate-direct");
 const jobsRouter = require("./routes/jobs");
-const filesRouter = require("./routes/files");
 const traceRouter = require("./routes/trace");
 
 /** Build the Express app (routes, middleware). Doesn't listen — see index.js. */
@@ -25,13 +25,14 @@ function createApp() {
   // Health check used by the Android app and by deployment health checks.
   // Returns immediately: no DB, no storage, no AI, no auth.
   const health = (req, res) => {
+    const configured = !!(config.xaiApiKey || config.aiApiKey);
     res.json({
       ok: true,
-      service: "sketchflow-backend",
+      service: "sketchflow-api",
       version: "1.0.0",
       name: "SketchFlow AI",
-      aiConfigured: !!config.aiApiKey,
-      aiProvider: config.aiApiKey ? config.aiProvider : "local",
+      aiConfigured: configured,
+      aiProvider: configured ? config.aiProvider : "local",
       time: Date.now(),
     });
   };
@@ -43,9 +44,9 @@ function createApp() {
     res.status(200).json({ name: "SketchFlow AI API", status: "online" });
   });
 
-  app.use("/api/tutorials", tutorialsRouter);
+  app.use("/api", generateRouter); // POST /api/generate-guide (job-based, legacy)
+  app.use("/api", generateDirectRouter); // POST /api/generate-direct (synchronous AI)
   app.use("/api/jobs", jobsRouter);
-  app.use("/api/files", filesRouter);
   app.use("/api/trace", traceRouter);
 
   // Static web app (the design UI) when present.

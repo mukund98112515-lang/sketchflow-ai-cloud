@@ -1,28 +1,23 @@
 "use strict";
 
 const express = require("express");
-const { getJob } = require("../jobs/queue");
+const { getJob } = require("../jobs/manager");
 const { authRequired } = require("../middlewares/errors");
 
 const router = express.Router();
 
+/**
+ * GET /api/jobs/:id — poll an in-memory generation job.
+ * Returns status/progress/stage/message; once status === "completed" the
+ * `result` field holds the full guide (steps with base64 images).
+ */
 router.get("/:id", authRequired, async (req, res, next) => {
   try {
-    const job = await getJob(req.params.id);
+    const job = getJob(req.params.id);
     if (!job) {
-      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Job not found." } });
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Job not found. It may have expired — please generate again." } });
     }
-    res.json({
-      jobId: job.id,
-      status: job.status, // queued | analyzing | planning | rendering | uploading | saving | completed | failed
-      progress: job.progress,
-      stage: job.stage,
-      message: job.error_message,
-      errorCode: job.error_code,
-      tutorialId: job.tutorial_id,
-      createdAt: job.created_at,
-      updatedAt: job.updated_at,
-    });
+    res.json(job);
   } catch (err) {
     next(err);
   }

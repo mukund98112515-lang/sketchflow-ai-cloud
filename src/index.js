@@ -1,19 +1,17 @@
 "use strict";
 
-const db = require("./db");
 const config = require("./config");
 const logger = require("./logger");
-const { cleanupStaleJobs } = require("./jobs/queue");
+const { cleanupStaleJobs } = require("./jobs/manager");
 
 async function start() {
   // Start the HTTP server FIRST so the process is immediately alive and
-  // /health responds, regardless of database/storage readiness. The database
-  // is warmed up in the background and initialized lazily on first use, so a
-  // not-yet-provisioned Postgres (or missing storage vars) can never crash or
-  // delay the healthcheck.
+  // /health responds. The backend is stateless: no database warm-up, no
+  // storage setup, nothing to wait for.
   const { createApp } = require("./app");
   const app = createApp();
 
+  // Periodic housekeeping: purge finished in-memory jobs + stale scratch files.
   const cleanupTimer = setInterval(() => {
     cleanupStaleJobs().catch((err) => logger.warn(`housekeeping failed: ${err.message}`));
   }, config.cleanupIntervalMs);
@@ -28,12 +26,6 @@ async function start() {
     logger.info(`job concurrency: ${config.jobConcurrency}`);
   });
 
-  // Non-fatal database warm-up: never blocks the listener above. A failure
-  // here is logged and the DB facade retries lazily on the next request.
-  db.ready()
-    .then(() => logger.info(`database ready: ${db.describe()}`))
-    .catch((err) => logger.warn(`database not ready at startup (will retry on first use): ${err.message}`));
-
   let shuttingDown = false;
   function shutdown(signal) {
     if (shuttingDown) return;
@@ -41,9 +33,7 @@ async function start() {
     logger.info(`received ${signal}, shutting down gracefully`);
     clearInterval(cleanupTimer);
     server.close(() => {
-      db.close()
-        .catch(() => {})
-        .finally(() => process.exit(0));
+      process.exit(0);
     });
     // Force-exit if connections hang.
     setTimeout(() => process.exit(0), 8000).unref();

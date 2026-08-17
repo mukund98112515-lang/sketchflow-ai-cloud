@@ -22,7 +22,8 @@ async function start() {
     logger.info(`listening on ${config.host}:${config.port}`);
     logger.info("health endpoint ready at /health");
     logger.info(`public base url: ${config.baseUrl}`);
-    logger.info(`AI provider: ${config.aiApiKey ? config.aiProvider : "algorithmic (no API key)"}`);
+    const aiConfigured = !!(config.xaiApiKey || config.aiApiKey);
+    logger.info(`AI provider: ${aiConfigured ? config.aiProvider : "algorithmic (no API key)"}`);
     logger.info(`job concurrency: ${config.jobConcurrency}`);
   });
 

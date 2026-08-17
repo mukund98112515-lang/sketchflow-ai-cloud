@@ -54,10 +54,17 @@ router.post(
   async (req, res, next) => {
     let tempPath = null;
     try {
-      const provider = getProvider();
+      let provider;
+      try {
+        provider = getProvider();
+      } catch (err) {
+        return res.status(503).json({
+          error: { code: "AI_NOT_CONFIGURED", message: err.message },
+        });
+      }
       if (!provider) {
         return res.status(503).json({
-          error: { code: "AI_NOT_CONFIGURED", message: "AI provider not configured. Set AI_API_KEY in environment." },
+          error: { code: "AI_NOT_CONFIGURED", message: "AI provider not configured. Set XAI_API_KEY or AI_API_KEY in environment." },
         });
       }
 

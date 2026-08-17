@@ -34,6 +34,7 @@ const config = {
 
   // AI provider configuration. xAI is the primary provider.
   aiProvider: process.env.AI_PROVIDER || "xai",
+  aiProviderExplicit: !!process.env.AI_PROVIDER,
   aiApiKey: process.env.AI_API_KEY || "",
   xaiApiKey: process.env.XAI_API_KEY || "",
   aiModel: process.env.AI_MODEL || "",

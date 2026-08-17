@@ -10,25 +10,35 @@ let instance = null;
 function getProvider() {
   if (instance) return instance;
 
+  const provider = (config.aiProvider || "xai").toLowerCase();
+  const explicit = config.aiProviderExplicit;
+
+  // When xAI/grok is EXPLICITLY requested (AI_PROVIDER=xai), require XAI_API_KEY.
+  // When it's just the default, allow fallback to algorithmic if no keys are set.
+  if ((provider === "xai" || provider === "grok") && explicit && !config.xaiApiKey) {
+    throw new Error(`XAI_API_KEY is required when AI_PROVIDER=${provider}`);
+  }
+
   if (!config.xaiApiKey && !config.aiApiKey) {
     return null;
   }
 
-  const provider = (config.aiProvider || "xai").toLowerCase();
-
   switch (provider) {
     case "xai":
     case "grok":
-      if (!config.xaiApiKey) return null;
       instance = new XaiProvider(config);
       break;
     case "gemini":
     case "google":
-      if (!config.aiApiKey) return null;
+      if (!config.aiApiKey) {
+        throw new Error(`AI_API_KEY is required when AI_PROVIDER=${provider}`);
+      }
       instance = new GeminiProvider(config);
       break;
     case "openai":
-      if (!config.aiApiKey) return null;
+      if (!config.aiApiKey) {
+        throw new Error(`AI_API_KEY is required when AI_PROVIDER=${provider}`);
+      }
       instance = new OpenAIProvider(config);
       break;
     default:

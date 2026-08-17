@@ -367,8 +367,13 @@ test("request uses correct xAI Responses API format", async () => {
   assert.equal(lastRequest.headers.authorization, "Bearer test-key-12345");
   assert.equal(lastRequest.body.model, "grok-2-vision-1212");
   assert.equal(lastRequest.body.store, false);
-  assert.ok(lastRequest.body.response_format.json_schema, "should have json_schema");
-  assert.equal(lastRequest.body.response_format.json_schema.name, "drawing_guide");
+
+  // Verify text.format is used (Responses API), NOT response_format (Chat Completions)
+  assert.ok(!lastRequest.body.response_format, "response_format must NOT be present on /v1/responses");
+  assert.ok(lastRequest.body.text, "body must have text field");
+  assert.ok(lastRequest.body.text.format, "text.format must be present");
+  assert.equal(lastRequest.body.text.format.name, "drawing_guide");
+  assert.equal(lastRequest.body.text.format.strict, true);
 
   // Verify input structure
   const input = lastRequest.body.input;
@@ -400,6 +405,22 @@ test("request has store:false for privacy", async () => {
   assert.equal(lastRequest.body.store, false, "store must be false for privacy");
 });
 
+test("request contains NO response_format (invalid on /v1/responses)", async () => {
+  mockResponse = makeSuccessResponse();
+  mockStatusCode = 200;
+  const provider = await loadXaiProvider();
+  await provider.generateGuide({
+    base64Image: makeTestImage().toString("base64"),
+    mimeType: "image/jpeg",
+    mode: "detailed",
+    stepCount: 8,
+    shading: true,
+  });
+  assert.equal(lastRequest.body.response_format, undefined, "response_format must NOT exist on the request body");
+  assert.ok(lastRequest.body.text, "text field must exist");
+  assert.ok(lastRequest.body.text.format, "text.format must exist for structured output");
+});
+
 test("JSON schema is strict with required fields", async () => {
   mockResponse = makeSuccessResponse();
   mockStatusCode = 200;
@@ -412,15 +433,15 @@ test("JSON schema is strict with required fields", async () => {
     shading: true,
   });
 
-  const jsonSchema = lastRequest.body.response_format.json_schema;
-  assert.equal(jsonSchema.strict, true, "json_schema.strict should be true");
-  assert.equal(jsonSchema.name, "drawing_guide");
-  assert.ok(jsonSchema.schema.properties.title);
-  assert.ok(jsonSchema.schema.properties.subjectType);
-  assert.ok(jsonSchema.schema.properties.steps);
-  assert.ok(jsonSchema.schema.required.includes("title"));
-  assert.ok(jsonSchema.schema.required.includes("steps"));
-  assert.ok(jsonSchema.schema.required.includes("subjectType"));
+  const format = lastRequest.body.text.format;
+  assert.equal(format.strict, true, "text.format.strict should be true");
+  assert.equal(format.name, "drawing_guide");
+  assert.ok(format.schema.properties.title);
+  assert.ok(format.schema.properties.subjectType);
+  assert.ok(format.schema.properties.steps);
+  assert.ok(format.schema.required.includes("title"));
+  assert.ok(format.schema.required.includes("steps"));
+  assert.ok(format.schema.required.includes("subjectType"));
 });
 
 // Run tests

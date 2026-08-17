@@ -90,9 +90,8 @@ class XaiProvider extends BaseProvider {
     const body = {
       model: this.model,
       store: false,
-      response_format: {
-        type: "json_schema",
-        json_schema: GUIDE_SCHEMA,
+      text: {
+        format: GUIDE_SCHEMA,
       },
       input: [
         {

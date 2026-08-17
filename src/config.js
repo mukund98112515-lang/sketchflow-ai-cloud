@@ -32,7 +32,10 @@ const config = {
   // inline to the app, so no absolute image URLs are generated).
   baseUrl: (process.env.PUBLIC_BASE_URL || process.env.BACKEND_URL || `http://localhost:${process.env.PORT || "8787"}`).replace(/\/$/, ""),
 
-  // AI provider configuration. xAI is the primary provider.
+  // AI provider configuration. xAI is the optional enhancement provider.
+  // XAI_ENABLED=false (default) = deterministic-only, ₹0/$0 cost.
+  // XAI_ENABLED=true + valid key = optional AI enhancement with fallback.
+  xaiEnabled: bool(process.env.XAI_ENABLED, false),
   aiProvider: process.env.AI_PROVIDER || "xai",
   aiProviderExplicit: !!process.env.AI_PROVIDER,
   aiApiKey: process.env.AI_API_KEY || "",

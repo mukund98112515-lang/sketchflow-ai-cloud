@@ -25,14 +25,17 @@ function createApp() {
   // Health check used by the Android app and by deployment health checks.
   // Returns immediately: no DB, no storage, no AI, no auth.
   const health = (req, res) => {
-    const configured = !!(config.xaiApiKey || config.aiApiKey);
+    const hasKey = !!(config.xaiApiKey || config.aiApiKey);
+    const xaiActive = config.xaiEnabled && hasKey;
     res.json({
       ok: true,
       service: "sketchflow-api",
       version: "1.0.0",
       name: "SketchFlow AI",
-      aiConfigured: configured,
-      aiProvider: configured ? config.aiProvider : "local",
+      aiConfigured: xaiActive,
+      aiProvider: xaiActive ? config.aiProvider : "local",
+      xaiEnabled: config.xaiEnabled,
+      mode: xaiActive ? "ai-enhanced" : "deterministic",
       time: Date.now(),
     });
   };

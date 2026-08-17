@@ -22,8 +22,15 @@ async function start() {
     logger.info(`listening on ${config.host}:${config.port}`);
     logger.info("health endpoint ready at /health");
     logger.info(`public base url: ${config.baseUrl}`);
-    const aiConfigured = !!(config.xaiApiKey || config.aiApiKey);
-    logger.info(`AI provider: ${aiConfigured ? config.aiProvider : "algorithmic (no API key)"}`);
+    // Safe AI status logging — never expose API keys
+    const hasKey = !!(config.xaiApiKey || config.aiApiKey);
+    if (config.xaiEnabled && hasKey) {
+      logger.info("xAI enhancement: configured");
+    } else if (config.xaiEnabled && !hasKey) {
+      logger.info("xAI enhancement: enabled but no API key set — using deterministic guide");
+    } else {
+      logger.info("xAI enhancement: disabled (XAI_ENABLED=false) — deterministic guide only");
+    }
     logger.info(`job concurrency: ${config.jobConcurrency}`);
   });
 

@@ -5,8 +5,12 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const Jimp = require("jimp");
 const config = require("../config");
+const logger = require("../logger");
 const { getProvider } = require("../ai/providers");
+const { buildPlan } = require("../ai/plan");
+const { generateSteps } = require("../ai/imageproc");
 const { validateUploadMeta, validateGuideResponse } = require("../ai/validate");
 const { authRequired } = require("../middlewares/errors");
 const { rateLimit } = require("../middlewares/rateLimit");
@@ -40,10 +44,56 @@ function deleteTemp(p) {
 }
 
 /**
+ * Generate a guide using the deterministic sketch pipeline.
+ * This always works — no external API key required.
+ */
+async function generateDeterministicGuide({ buffer, mode, stepCount, shading }) {
+  const img = await Jimp.read(buffer);
+  const { buildAnalysis } = require("../ai/imageproc");
+  const analysis = buildAnalysis(img);
+
+  const { plan } = await buildPlan(analysis, { mode, stepCount, shading, buffer });
+
+  const { images } = await generateSteps({ buffer, mode, stepCount, shading, thickness: 1.3 });
+
+  const steps = [];
+  for (let i = 0; i < images.length; i++) {
+    const imgStep = images[i];
+    imgStep.quality(78);
+    const buf = await imgStep.getBufferAsync(Jimp.MIME_JPEG);
+    steps.push({
+      stepNumber: i + 1,
+      title: plan.steps[i].title,
+      instruction: plan.steps[i].instruction,
+      artistTip: plan.steps[i].tip || "",
+      imageUrl: null,
+    });
+    images[i] = null;
+  }
+
+  const subjectType = (analysis.classification && analysis.classification.subjectType) || "general";
+
+  return {
+    title: plan.title,
+    subjectType,
+    mode,
+    stepCount: steps.length,
+    shading: !!shading,
+    steps,
+    generatedBy: "deterministic",
+  };
+}
+
+/**
  * POST /api/generate-direct
- * Synchronous single-call AI generation — no jobs, no polling.
- * multipart/form-data: image, mode (easy|detailed|realistic),
- * stepCount (6|8|10|12), shading (true|false).
+ * Synchronous generation with automatic fallback.
+ * xAI is OPTIONAL — the deterministic pipeline always works.
+ *
+ * Flow:
+ *   1. If xAI provider exists: try xAI → fall back on any error
+ *   2. If no provider: deterministic pipeline
+ *   3. Deterministic pipeline always produces a valid guide
+ *
  * Returns 200 { title, subjectType, mode, stepCount, shading, steps }.
  */
 router.post(
@@ -54,20 +104,6 @@ router.post(
   async (req, res, next) => {
     let tempPath = null;
     try {
-      let provider;
-      try {
-        provider = getProvider();
-      } catch (err) {
-        return res.status(503).json({
-          error: { code: "AI_NOT_CONFIGURED", message: err.message },
-        });
-      }
-      if (!provider) {
-        return res.status(503).json({
-          error: { code: "AI_NOT_CONFIGURED", message: "AI provider not configured. Set XAI_API_KEY or AI_API_KEY in environment." },
-        });
-      }
-
       const file = req.file;
       if (!file || !file.buffer || file.buffer.length === 0) {
         return res.status(400).json({ error: { code: "NO_IMAGE", message: "No image was uploaded." } });
@@ -93,43 +129,81 @@ router.post(
 
       tempPath = saveTemp(file.originalname || "upload.bin", file.buffer);
 
-      const base64Image = file.buffer.toString("base64");
-      const mimeType = file.mimetype || "image/jpeg";
+      // ── Step 1: Try xAI provider if available ──────────────────────
+      let guide = null;
+      let usedXai = false;
 
-      const guide = await provider.generateGuide({ base64Image, mimeType, mode, stepCount, shading });
+      let provider;
+      try {
+        provider = getProvider();
+      } catch (err) {
+        logger.warn(`xAI provider init failed (falling back to deterministic): ${err.message}`);
+        provider = null;
+      }
 
+      if (provider) {
+        try {
+          const base64Image = file.buffer.toString("base64");
+          const mimeType = file.mimetype || "image/jpeg";
+          guide = await provider.generateGuide({ base64Image, mimeType, mode, stepCount, shading });
+          usedXai = true;
+          logger.info(`xAI enhancement succeeded for generation`);
+        } catch (err) {
+          // xAI failed — log safely and fall through to deterministic
+          logger.warn(`xAI enhancement unavailable: ${err.code || err.message}. Using deterministic guide.`);
+          guide = null;
+        }
+      }
+
+      // ── Step 2: Deterministic fallback (always works) ──────────────
+      if (!guide) {
+        try {
+          guide = await generateDeterministicGuide({ buffer: file.buffer, mode, stepCount, shading });
+          logger.info("Deterministic guide generated successfully");
+        } catch (err) {
+          logger.error(`Deterministic generation failed: ${err.message}`);
+          return res.status(500).json({
+            error: { code: "GENERATION_FAILED", message: "We couldn't generate your guide. Please try again." },
+          });
+        }
+      }
+
+      // ── Step 3: Validate and return ────────────────────────────────
       const guideValidation = validateGuideResponse(guide, { mode, stepCount, shading });
       if (!guideValidation.ok) {
-        return res.status(502).json({
-          error: { code: "AI_INVALID_RESPONSE", message: "AI returned invalid data: " + guideValidation.errors.join("; ") },
-        });
+        // If xAI result is invalid, retry with deterministic
+        if (usedXai) {
+          logger.warn(`xAI guide failed validation (${guideValidation.errors.join("; ")}). Retrying deterministic.`);
+          try {
+            guide = await generateDeterministicGuide({ buffer: file.buffer, mode, stepCount, shading });
+            usedXai = false;
+          } catch (err) {
+            logger.error(`Deterministic fallback after validation failure also failed: ${err.message}`);
+          }
+        }
+        // Re-validate
+        const recheck = validateGuideResponse(guide, { mode, stepCount, shading });
+        if (!recheck.ok) {
+          return res.status(500).json({
+            error: { code: "GENERATION_FAILED", message: "We couldn't generate your guide. Please try again." },
+          });
+        }
       }
 
       deleteTemp(tempPath);
       tempPath = null;
 
-      res.json(guide);
+      // Strip internal metadata before sending to Android
+      const response = { ...guide };
+      delete response.generatedBy;
+      res.json(response);
     } catch (err) {
       deleteTemp(tempPath);
-      if (err.code === "AUTH_FAILED") {
-        return res.status(502).json({ error: { code: "AI_AUTH_FAILED", message: "AI service authentication failed. Please try again later." } });
-      }
-      if (err.code === "RATE_LIMITED") {
-        return res.status(429).json({ error: { code: "AI_RATE_LIMITED", message: "AI service is busy. Please try again later." } });
-      }
-      if (err.code === "PROVIDER_ERROR") {
-        return res.status(502).json({ error: { code: "AI_PROVIDER_ERROR", message: "AI service encountered an error. Please try again." } });
-      }
-      if (err.code === "EMPTY_RESPONSE" || err.code === "INVALID_JSON") {
-        return res.status(502).json({ error: { code: "AI_INVALID_RESPONSE", message: "AI returned an unreadable response. Continuing with standard generation." } });
-      }
-      if (err.code === "API_ERROR" || err.code === "CONFIG_ERROR") {
-        return res.status(502).json({ error: { code: "AI_UNAVAILABLE", message: "Guide generation couldn't use AI enhancement. Please try again." } });
-      }
-      if (err.name === "TimeoutError" || err.code === "ABORT_ERR") {
-        return res.status(504).json({ error: { code: "AI_TIMEOUT", message: "AI request timed out. Please try again." } });
-      }
-      next(err);
+      // Never expose provider internals to Android
+      logger.error(`generate-direct error: ${err.message}`);
+      res.status(500).json({
+        error: { code: "GENERATION_FAILED", message: "We couldn't generate your guide. Please try again." },
+      });
     }
   }
 );

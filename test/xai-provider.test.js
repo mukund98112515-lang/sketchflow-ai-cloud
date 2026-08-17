@@ -524,6 +524,88 @@ test("deterministic fallback works when xAI is unavailable", async () => {
   process.env.XAI_API_KEY = "test-key-12345";
 });
 
+test("XAI_ENABLED=false disables xAI even with key present", async () => {
+  process.env.XAI_ENABLED = "false";
+  process.env.XAI_API_KEY = "test-key-12345";
+  process.env.AI_PROVIDER = "xai";
+  delete require.cache[require.resolve("../src/config")];
+  delete require.cache[require.resolve("../src/ai/providers/index")];
+  const { getProvider } = require("../src/ai/providers");
+  const provider = getProvider();
+  assert.equal(provider, null, "provider must be null when XAI_ENABLED=false");
+  delete process.env.XAI_ENABLED;
+});
+
+test("XAI_ENABLED=true with key returns provider", async () => {
+  process.env.XAI_ENABLED = "true";
+  process.env.XAI_API_KEY = "test-key-12345";
+  process.env.AI_PROVIDER = "xai";
+  delete require.cache[require.resolve("../src/config")];
+  delete require.cache[require.resolve("../src/ai/providers/index")];
+  const { getProvider } = require("../src/ai/providers");
+  const provider = getProvider();
+  assert.ok(provider, "provider must exist when XAI_ENABLED=true and key is set");
+  delete process.env.XAI_ENABLED;
+});
+
+test("401 auth failure is caught by provider (not fatal)", async () => {
+  mockResponse = { error: { message: "Invalid API key", code: "invalid_api_key" } };
+  mockStatusCode = 401;
+  const provider = await loadXaiProvider();
+  try {
+    await provider.generateGuide({
+      base64Image: makeTestImage().toString("base64"),
+      mimeType: "image/jpeg",
+      mode: "detailed",
+      stepCount: 8,
+      shading: true,
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.equal(err.code, "AUTH_FAILED");
+    // The route handler catches this and falls back to deterministic
+    assert.ok(err.statusCode === 401, "should have HTTP 401 status");
+  }
+});
+
+test("403 forbidden is caught by provider (not fatal)", async () => {
+  mockResponse = { error: { message: "Forbidden" } };
+  mockStatusCode = 403;
+  const provider = await loadXaiProvider();
+  try {
+    await provider.generateGuide({
+      base64Image: makeTestImage().toString("base64"),
+      mimeType: "image/jpeg",
+      mode: "detailed",
+      stepCount: 8,
+      shading: true,
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.equal(err.code, "AUTH_FAILED");
+    assert.ok(err.statusCode === 403, "should have HTTP 403 status");
+  }
+});
+
+test("429 rate limit is caught by provider (not fatal)", async () => {
+  mockResponse = { error: { message: "Rate limited" } };
+  mockStatusCode = 429;
+  const provider = await loadXaiProvider();
+  try {
+    await provider.generateGuide({
+      base64Image: makeTestImage().toString("base64"),
+      mimeType: "image/jpeg",
+      mode: "detailed",
+      stepCount: 8,
+      shading: true,
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.equal(err.code, "RATE_LIMITED");
+    assert.ok(err.statusCode === 429, "should have HTTP 429 status");
+  }
+});
+
 // Run tests
 async function run() {
   await startMockServer();

@@ -1,6 +1,7 @@
 "use strict";
 
 const config = require("../../config");
+const logger = require("../../logger");
 const { GeminiProvider } = require("./gemini");
 const { OpenAIProvider } = require("./openai");
 const { XaiProvider } = require("./xai");
@@ -10,16 +11,24 @@ let instance = null;
 function getProvider() {
   if (instance) return instance;
 
+  // ── XAI_ENABLED=false (default): deterministic-only, no external AI ──
+  if (!config.xaiEnabled) {
+    if (config.xaiApiKey || config.aiApiKey) {
+      logger.info("xAI enhancement disabled (XAI_ENABLED=false). Using deterministic guide.");
+    }
+    return null;
+  }
+
   const provider = (config.aiProvider || "xai").toLowerCase();
   const explicit = config.aiProviderExplicit;
 
   // When xAI/grok is EXPLICITLY requested (AI_PROVIDER=xai), require XAI_API_KEY.
-  // When it's just the default, allow fallback to algorithmic if no keys are set.
   if ((provider === "xai" || provider === "grok") && explicit && !config.xaiApiKey) {
     throw new Error(`XAI_API_KEY is required when AI_PROVIDER=${provider}`);
   }
 
   if (!config.xaiApiKey && !config.aiApiKey) {
+    logger.info("xAI enabled but no API key set. Using deterministic guide.");
     return null;
   }
 

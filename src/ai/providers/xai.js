@@ -34,6 +34,7 @@ Return ONLY valid JSON matching this exact schema (no markdown fences, no extra 
 }`;
 
 const GUIDE_SCHEMA = {
+  type: "json_schema",
   name: "drawing_guide",
   strict: true,
   schema: {
@@ -114,6 +115,24 @@ class XaiProvider extends BaseProvider {
         },
       ],
     };
+
+    // ── Pre-flight validation ──────────────────────────────────────────
+    if (!body.model) throw new XaiError("CONFIG_ERROR", "xAI model is not configured.", 0);
+    if (!body.input || !body.input.length) throw new XaiError("CONFIG_ERROR", "xAI request has no input.", 0);
+    if (!body.text?.format?.type) throw new XaiError("CONFIG_ERROR", "xAI structured output format.type is missing.", 0);
+    if (!body.text?.format?.name) throw new XaiError("CONFIG_ERROR", "xAI structured output format.name is missing.", 0);
+    if (!body.text?.format?.schema) throw new XaiError("CONFIG_ERROR", "xAI structured output format.schema is missing.", 0);
+
+    // ── Debug: sanitised request snapshot (no secrets, no image data) ──
+    const logger = require("../../logger");
+    logger.debug("xAI request:", JSON.stringify({
+      endpoint: "/v1/responses",
+      model: body.model,
+      hasInput: body.input.length > 0,
+      inputRoles: body.input.map((i) => i.role || "content"),
+      text: { format: { type: body.text.format.type, name: body.text.format.name, strict: body.text.format.strict } },
+      store: body.store,
+    }));
 
     const resp = await fetch(this.baseUrl, {
       method: "POST",

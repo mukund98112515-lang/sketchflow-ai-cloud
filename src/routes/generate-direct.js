@@ -112,16 +112,19 @@ router.post(
     } catch (err) {
       deleteTemp(tempPath);
       if (err.code === "AUTH_FAILED") {
-        return res.status(502).json({ error: { code: "AI_AUTH_FAILED", message: err.message } });
+        return res.status(502).json({ error: { code: "AI_AUTH_FAILED", message: "AI service authentication failed. Please try again later." } });
       }
       if (err.code === "RATE_LIMITED") {
-        return res.status(429).json({ error: { code: "AI_RATE_LIMITED", message: err.message } });
+        return res.status(429).json({ error: { code: "AI_RATE_LIMITED", message: "AI service is busy. Please try again later." } });
       }
       if (err.code === "PROVIDER_ERROR") {
-        return res.status(502).json({ error: { code: "AI_PROVIDER_ERROR", message: err.message } });
+        return res.status(502).json({ error: { code: "AI_PROVIDER_ERROR", message: "AI service encountered an error. Please try again." } });
       }
       if (err.code === "EMPTY_RESPONSE" || err.code === "INVALID_JSON") {
-        return res.status(502).json({ error: { code: "AI_INVALID_RESPONSE", message: err.message } });
+        return res.status(502).json({ error: { code: "AI_INVALID_RESPONSE", message: "AI returned an unreadable response. Continuing with standard generation." } });
+      }
+      if (err.code === "API_ERROR" || err.code === "CONFIG_ERROR") {
+        return res.status(502).json({ error: { code: "AI_UNAVAILABLE", message: "Guide generation couldn't use AI enhancement. Please try again." } });
       }
       if (err.name === "TimeoutError" || err.code === "ABORT_ERR") {
         return res.status(504).json({ error: { code: "AI_TIMEOUT", message: "AI request timed out. Please try again." } });

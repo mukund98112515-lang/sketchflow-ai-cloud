@@ -1,7 +1,7 @@
 {
   "name": "sketchflow-ai-server",
-  "version": "1.0.0",
-  "description": "SketchFlow AI backend - secure API for AI sketch tutorial generation",
+  "version": "2.0.0",
+  "description": "SketchFlow AI backend - stateless cloud API for AI sketch tutorial generation",
   "type": "commonjs",
   "main": "src/index.js",
   "scripts": {
@@ -14,11 +14,9 @@
     "node": ">=22.5"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.658.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "jimp": "^0.22.12",
-    "multer": "^2.0.1",
-    "pg": "^8.13.1"
+    "multer": "^2.0.1"
   }
 }
